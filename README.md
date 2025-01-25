@@ -21,3 +21,15 @@ chmod +x snell-docker.sh
 ```
 
 # 由deepseek 改编 适用于alpine linux 
+## 直接重启
+```
+rc-service docker restart
+```
+
+## 或分步操作（停止 → 启动）
+```
+rc-service docker stop
+```
+```
+rc-service docker start
+```
