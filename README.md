@@ -1,7 +1,9 @@
 # snell-dacker
 
 ## 安装必要依赖
+```
 apk add --no-cache curl docker
+```
 
 ## 安装必要依赖
 ```bash
