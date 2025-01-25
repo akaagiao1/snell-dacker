@@ -1,4 +1,5 @@
 # snell-dacker
+适配于alpine
 
 ## 安装必要依赖
 ```
