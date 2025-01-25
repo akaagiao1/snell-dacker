@@ -20,16 +20,45 @@ chmod +x snell-docker.sh
 ./snell-docker.sh
 ```
 
-# 由deepseek 改编 适用于alpine linux 
-## 直接重启
+由deepseek 改编 适用于alpine linux 
+# 如需查找修改配置
+
+1. 重启 Docker Compose 管理的服务
+如果是通过 docker-compose.yml 或 docker compose 启动的服务，需使用以下命令：
+
+# 进入项目目录（包含 docker-compose.yml）
 ```
-rc-service docker restart
+cd /root/snell-docker
+```
+# 重启所有服务
+```
+docker compose restart
 ```
 
-## 或分步操作（停止 → 启动）
+# 或指定服务名称（例如只重启 snell 服务）
 ```
-rc-service docker stop
+docker compose restart snell
 ```
+2. 完整停止后重新启动
+如果需强制重建容器（例如配置文件修改后）：
+
+
+# 停止并删除容器
 ```
-rc-service docker start
+docker compose down
+```
+# 重新构建镜像并启动
+```
+docker compose up -d --build
+```
+3. 仅重启单个容器
+直接通过容器名称操作：
+
+# 查找容器名称
+```
+docker ps --filter "name=snell"
+```
+# 重启容器
+```
+docker restart snell
 ```
