@@ -1,5 +1,4 @@
 #!/bin/sh
-
 # 定义颜色代码
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,119 +16,113 @@ check_root() {
     fi
 }
 
-# 安装基础依赖
-install_deps() {
-    echo -e "${CYAN}安装必要依赖...${RESET}"
-    apk update
-    apk add --no-cache curl docker docker-cli-compose coreutils
+# 更新系统包和升级 (Alpine 使用 apk)
+apk update && apk upgrade
+
+# 检测是否已安装 Docker (Alpine 社区版仓库提供 Docker)
+if command -v docker >/dev/null 2>&1; then
+    echo "Docker 已经安装"
+    docker --version
+else
+    echo "正在安装 Docker"
+    # 安装 Docker (Alpine 方式)
+    apk add docker
+    if [ $? -ne 0 ]; then
+        echo "Docker 安装失败，请检查网络连接或安装脚本"
+        exit 1
+    fi
+    # 将当前用户加入 docker 组 (可选，按需调整用户名)
+    addgroup $USER docker
+    # 启动 Docker 服务并设置开机自启
     rc-update add docker boot
     service docker start
-}
+    echo "Docker 安装成功！"
+fi
 
-# 检测是否已安装 Docker
-check_docker() {
-    if command -v docker >/dev/null 2>&1; then
-        echo -e "${GREEN}Docker 已安装${RESET}"
-        docker --version
-    else
-        echo -e "${YELLOW}正在安装 Docker...${RESET}"
-        install_deps
-        if ! command -v docker >/dev/null 2>&1; then
-            echo -e "${RED}Docker 安装失败，请检查日志${RESET}"
-            exit 1
-        fi
+# 判断并卸载不同版本的 Docker Compose（如果有）
+if [ -f "/usr/local/bin/docker-compose" ]; then
+    rm /usr/local/bin/docker-compose
+fi
+
+if [ -d "$HOME/.docker/cli-plugins/" ]; then
+    rm -rf $HOME/.docker/cli-plugins/
+fi
+
+# 安装 Docker Compose (Alpine 可 apk 安装或直接下载二进制文件)
+if command -v docker-compose >/dev/null 2>&1; then
+    echo "Docker Compose 已经安装"
+    docker-compose --version
+else
+    echo "正在安装 Docker Compose"
+    # 方法1: 直接下载二进制文件 (推荐，确保使用最新兼容版本)
+    DOCKER_COMPOSE_VERSION="2.27.1" # 请根据需要调整版本号
+    curl -L "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+    # 或者方法2: 使用 apk 安装 (可能版本较旧)
+    # apk add docker-compose
+    if [ $? -ne 0 ]; then
+        echo "Docker Compose 安装失败，请检查网络连接或安装脚本"
+        exit 1
     fi
-}
+    echo "Docker Compose 安装成功！"
+fi
 
-# 清理旧版本 Docker Compose
-cleanup_compose() {
-    if [ -f "/usr/bin/docker-compose" ]; then
-        echo -e "${YELLOW}移除旧版 docker-compose...${RESET}"
-        apk del docker-compose >/dev/null 2>&1
-    fi
-}
+# 创建所需目录
+mkdir -p /root/snell-docker/snell-conf
 
-# 生成随机数据
-generate_random() {
-    echo -e "${CYAN}生成随机配置...${RESET}"
-    RANDOM_PORT=$(awk -v min=30000 -v max=65000 'BEGIN{srand(); print int(min+rand()*(max-min+1))}')
-    RANDOM_PSK=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
-}
+# 生成随机端口和密码 (确保使用兼容的命令)
+RANDOM_PORT=$(awk 'BEGIN{srand(); print int(rand()*(65000-30000+1))+30000}')
+RANDOM_PSK=$(cat /dev/urandom | tr -dc A-Za-z0-9 | head -c 16)
 
-# 检测架构并设置URL
-set_arch() {
-    case "$(uname -m)" in
-        x86_64) DOWNLOAD_URL="https://dl.nssurge.com/snell/snell-server-v4.1.1-linux-amd64.zip" ;;
-        aarch64|arm64) DOWNLOAD_URL="https://dl.nssurge.com/snell/snell-server-v4.1.1-linux-aarch64.zip" ;;
-        *) echo -e "${RED}不支持的架构: $(uname -m)${RESET}"; exit 1 ;;
-    esac
-}
+# 检测系统架构
+ARCH=$(uname -m)
 
-# 创建配置文件
-create_config() {
-    mkdir -p /root/snell-docker/snell-conf
-    echo -e "${BLUE}创建 docker-compose.yml...${RESET}"
-    cat > /root/snell-docker/docker-compose.yml << EOF
+if [ "$ARCH" = "x86_64" ]; then
+    DOWNLOAD_URL="https://dl.nssurge.com/snell/snell-server-v5.0.0-linux-amd64.zip"
+elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+    DOWNLOAD_URL="https://dl.nssurge.com/snell/snell-server-v5.0.0-linux-aarch64.zip"
+else
+    echo "不支持的架构: $ARCH"
+    exit 1
+fi
+
+# 创建 docker-compose.yml
+cat > /root/snell-docker/docker-compose.yml << EOF
 services:
   snell:
     image: accors/snell:latest
     container_name: snell
     restart: always
-    network_mode: "host"
+    network_mode: host
     volumes:
       - ./snell-conf/snell.conf:/etc/snell-server.conf
     environment:
       - SNELL_URL=$DOWNLOAD_URL
 EOF
 
-    echo -e "${BLUE}生成 snell.conf...${RESET}"
-    cat > /root/snell-docker/snell-conf/snell.conf << EOF
+# 创建 snell.conf 配置文件
+cat > /root/snell-docker/snell-conf/snell.conf << EOF
 [snell-server]
-listen = 0.0.0.0:$RANDOM_PORT
+listen = ::0:$RANDOM_PORT
 psk = $RANDOM_PSK
-ipv6 = false
+ipv6 = true
 EOF
-}
 
-# 获取公网信息
-get_network_info() {
-    HOST_IP=$(curl -s --connect-timeout 5 http://checkip.amazonaws.com || echo "IP查询失败")
-    IP_COUNTRY=$(curl -s --connect-timeout 5 http://ipinfo.io/$HOST_IP/country || echo "国家未知")
-}
+# 切换目录
+cd /root/snell-docker
 
-# 输出配置信息
-show_config() {
-    echo -e "\n${GREEN}=== 部署完成 ===${RESET}"
-    echo -e "服务器IP:   ${CYAN}$HOST_IP${RESET}"
-    echo -e "监听端口:   ${YELLOW}$RANDOM_PORT${RESET}"
-    echo -e "预共享密钥: ${PURPLE}$RANDOM_PSK${RESET}"
-    echo -e "国家地区:   ${BLUE}$IP_COUNTRY${RESET}"
+# 拉取并启动 Docker 容器
+docker compose pull && docker compose up -d && sleep 3 && docker logs snell
 
-    echo -e "\n${GREEN}=== Surge 客户端配置 ===${RESET}"
-    echo "${IP_COUNTRY} = snell, ${HOST_IP}, ${RANDOM_PORT}, psk = ${RANDOM_PSK}, version = 4, reuse = true" | tee /root/snell-docker/snell-conf/client.conf
-}
+# 获取本机IP地址 (确保 curl 已安装)
+HOST_IP=$(curl -s http://checkip.amazonaws.com || echo "无法获取 IP 地址")
 
-# 主执行流程
-main() {
-    check_root
-    check_docker
-    cleanup_compose
-    generate_random
-    set_arch
-    create_config
+# 获取IP所在国家
+IP_COUNTRY=$(curl -s http://ipinfo.io/$HOST_IP/country || echo "无法获取国家信息")
 
-    echo -e "${CYAN}启动容器...${RESET}"
-    cd /root/snell-docker && \
-    docker compose pull && \
-    docker compose up -d && \
-    sleep 3 && \
-    docker logs snell
-
-    get_network_info
-    show_config
-
-    echo -e "\n${GREEN}配置文件路径: /root/snell-docker/snell-conf/snell.conf${RESET}"
-    echo -e "${YELLOW}如需修改配置，请编辑后执行: docker compose restart${RESET}"
-}
-
-main
+# 输出客户端信息
+echo -e "${GREEN}Snell 示例配置${RESET}"
+cat << EOF > /root/snell-docker/snell-conf/snell.txt
+${IP_COUNTRY} = snell, ${HOST_IP}, ${RANDOM_PORT}, psk = ${RANDOM_PSK}, version = 5, reuse = true
+EOF
+cat /root/snell-docker/snell-conf/snell.txt
