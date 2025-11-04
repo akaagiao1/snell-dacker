@@ -54,12 +54,7 @@ if command -v docker-compose >/dev/null 2>&1; then
     docker-compose --version
 else
     echo "正在安装 Docker Compose"
-    # 方法1: 直接下载二进制文件 (推荐，确保使用最新兼容版本)
-    DOCKER_COMPOSE_VERSION="2.27.1" # 请根据需要调整版本号
-    curl -L "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-    # 或者方法2: 使用 apk 安装 (可能版本较旧)
-    # apk add docker-compose
+    apk add docker-compose
     if [ $? -ne 0 ]; then
         echo "Docker Compose 安装失败，请检查网络连接或安装脚本"
         exit 1
